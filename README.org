@@ -1,0 +1,28 @@
+#+TITLE: @0k/kal-sse-client
+
+* Purpose
+
+=@0k/kal-sse-client= is the shared browser client for the =kal-sse=
+snapshot + server-owned cursor protocol. It takes a snapshot, adopts the
+server's =x-sub-id=, opens the stream with only that subscription id, and
+re-takes the snapshot before reconnecting after a transport failure.
+
+Hosts provide relative endpoint paths and URL resolution so the same client
+works at an application root or beneath a reverse-proxy prefix. The private
+package is delivered as committed local tarballs and is never published.
+
+* Acceptance ledger
+
+| Requirement | Automated proof |
+|-
+| Snapshot completes before stream attachment | =test/snapshot-cursor.test.ts= |
+| Reconnect re-snapshots and adopts the refreshed id | =test/snapshot-cursor.test.ts= |
+| Failed recovery preserves the last applied snapshot and retries | =test/snapshot-cursor.test.ts= |
+| Backoff is bounded and teardown cancels pending work | =test/resilient.test.ts= |
+| Only the shared owner constructs =EventSource= | consumer boundary tests |
+
+* Local delivery
+
+Run =npm run check= and then =npm run vendor=. The vendor script builds and
+packs once, validates both consumer declarations, copies identical tarball
+bytes, and installs each frontend from its local vendor directory.
