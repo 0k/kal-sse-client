@@ -1,0 +1,37 @@
+{
+  "name": "@0k/kal-sse-client",
+  "version": "0.1.0",
+  "description": "Framework-agnostic browser client for kal-sse snapshot and server-owned cursor channels.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "files": [
+    "dist",
+    "README.org",
+    "LICENSE"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "check": "npm run test && npm run typecheck && npm run build",
+    "vendor": "node scripts/vendor.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "jsdom": "25.0.1",
+    "typescript": "5.7.3",
+    "vite": "6.0.7",
+    "vitest": "3.0.5"
+  }
+}
