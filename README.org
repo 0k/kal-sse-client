@@ -2,23 +2,17 @@
 
 [[https://www.npmjs.com/package/@0k/kal-sse-client][https://img.shields.io/npm/v/@0k/kal-sse-client.svg]]
 
-* Purpose
+* Overview
 
-=@0k/kal-sse-client= is the shared browser client for the =kal-sse=
-snapshot + server-owned cursor protocol. It takes a snapshot, adopts the
-server's =x-sub-id=, and initially opens the stream with that subscription id.
-After a transport failure, it resumes with =sub= and the =last_event_id= of
-the last applied event. It re-takes the snapshot only when no event id is
-remembered or the resume fails before opening, preserving the last applied
-snapshot while recovery is pending.
+A kal-sse data channel pairs a REST snapshot with an SSE stream. The snapshot
+registers or refreshes the subscription, the server owns its ~sub~ id, and each
+stream event carries an SSE ~id:~. On reconnect, the client can send the last
+applied event id so the server can replay from that point.
 
-=createSnapshotCursorSse= enables resume-first recovery automatically.
-=createResilientSse= offers =resumeFromLastEventId= (default =false=, retaining
-the existing recovery callback on every reconnect). When enabled, it remembers
-non-empty =MessageEvent.lastEventId= values only after the host callback returns.
-
-Hosts provide relative endpoint paths and URL resolution so the same client
-works at an application root or beneath a reverse-proxy prefix.
+=@0k/kal-sse-client= owns the =EventSource= lifecycle, reconnect backoff,
+snapshot registration, and resume-first recovery. Your application owns endpoint
+paths, URL resolution, parsing event payloads, and rendering or otherwise
+updating application state. It supports Chrome 91 and later.
 
 * Installation
 
@@ -26,31 +20,139 @@ works at an application root or beneath a reverse-proxy prefix.
 npm install @0k/kal-sse-client
 #+end_src
 
-* Acceptance ledger
+* Usage
 
-| Requirement | Automated proof |
+** Snapshot and cursor channel
+
+Use =createSnapshotCursorSse= for the usual kal-sse data channel: fetch a
+snapshot, render it, then apply changes from its SSE stream.
+
+#+begin_src ts
+import { createSnapshotCursorSse } from "@0k/kal-sse-client";
+
+type Archive = { items: Array<{ id: string; title: string }> };
+type ArchiveChange = { id: string; title: string };
+
+const archive = createSnapshotCursorSse<Archive>({
+  snapshotPath: "/api/archive",
+  streamPath: "/api/archive/events",
+  applySnapshot: (snapshot) => renderArchive(snapshot),
+  onMessage: (event) => applyArchiveChange(JSON.parse(event.data) as ArchiveChange),
+});
+
+await archive.start();
+
+// Later, for example when the view is disposed:
+archive.stop();
+#+end_src
+
+=start()= begins the snapshot request and returns one shared promise. That
+promise resolves when the first snapshot succeeds, or when its first attempt
+fails. Later snapshot retries continue in the background, so a resolved promise
+does not by itself mean a stream is already open.
+
+The snapshot response must provide a non-empty =x-sub-id= header. For a
+cross-origin snapshot endpoint, expose it to browser JavaScript with
+=Access-Control-Expose-Headers: x-sub-id=. Once the client knows this id, each
+later snapshot request adds ~?sub=<id>~ (or ~&sub=<id>~ when the path already
+has a query string). The stream URL always appends ~sub=<id>~ as a query
+parameter.
+
+** Plain SSE endpoint
+
+Use =createResilientSse= when the endpoint is not a snapshot cursor channel.
+By default it calls =onBeforeReconnect= before every reconnect, which is a
+place to refetch application state.
+
+#+begin_src ts
+import { createResilientSse } from "@0k/kal-sse-client";
+
+const notifications = createResilientSse({
+  url: () => "/api/notifications/events",
+  onMessage: (event) => showNotification(JSON.parse(event.data)),
+  onBeforeReconnect: async () => {
+    const response = await fetch("/api/notifications");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    replaceNotifications(await response.json());
+  },
+});
+
+notifications.start();
+// Later:
+notifications.stop();
+#+end_src
+
+* Reconnection behavior
+
+The first reconnect attempt opens immediately. After that, reconnect delay
+starts at 250 ms, doubles after each attempt, and is capped at 30 s. A delivered
+event starts a 5 s healthy timer; when that timer elapses, the retry delay
+resets. Keep-alive comments do not count as delivered events and never reset
+the delay.
+
+=createSnapshotCursorSse= always resumes first, using its =sub= id and the
+last applied =last_event_id=. =createResilientSse= does this only when
+=resumeFromLastEventId: true=. An event id is remembered only after the relevant
+message callback returns normally.
+
+The client fetches a fresh snapshot if no event was applied since the last
+snapshot, or if a resume attempt fails before the stream opens. This is
+deliberately conservative: =EventSource= does not expose the HTTP response
+status, so =409 needs_snapshot= cannot be distinguished from other HTTP errors
+such as a proxy's =502=. A network drop differs: the browser retries with
+~readyState~ set to ~CONNECTING~. The client nevertheless treats any resume
+attempt that fails before opening the same way. While snapshot recovery is
+pending, the last successfully applied snapshot stays rendered.
+
+This resume protocol needs a =kal-sse= server version 0.2 or later, which
+accepts =last_event_id=. With a 0.1 server, typical Axum handlers ignore that
+unknown query parameter, so the connection silently falls back to the server
+cursor instead of client-directed replay.
+
+* Option reference
+
+** =createResilientSse(options)=
+
+| Option | Type | Default | Meaning |
 |-
-| Snapshot completes before stream attachment | =test/snapshot-cursor.test.ts= |
-| Resume sends the last applied id without snapshot recovery | =resumes after the last applied event without running snapshot recovery= |
-| Unopened resume falls back and forgets the old id | =falls back and forgets the id when a resume fails before opening= |
-| No applied id triggers snapshot recovery | =runs snapshot recovery when an opened stream has not delivered an id= |
-| Default remains snapshot-on-every-reconnect | =keeps snapshot-on-every-reconnect behavior by default= |
-| Resume backoff is bounded and stop cancels pending resume | =test/resilient.test.ts= |
-| Only successfully applied non-empty ids are retained | =records only successfully applied ids and preserves them across empty ids= |
-| Named events and encoded ids use the same resume contract | =records named events and URL-encodes their ids without an existing query= |
-| Healthy events reset resume backoff | =resets resume backoff after events sustain the healthy window= |
-| Snapshot channel resumes without fetching, or re-snapshots once on fallback | =test/snapshot-cursor.test.ts= |
-| Failed recovery preserves the last applied snapshot and retries | =test/snapshot-cursor.test.ts= |
-| Backoff is bounded and teardown cancels pending work | =test/resilient.test.ts= |
-| Only the shared owner constructs =EventSource= | consumer boundary tests |
+| ~url~ | ~() => string~ | Required | Returns the SSE URL for each new connection. |
+| ~onMessage~ | ~(event: MessageEvent) => void~ | Required | Handles unnamed SSE messages. A non-empty event id is remembered only after this callback returns when resume is enabled. |
+| ~onEvents~ | ~Record<string, (event: MessageEvent) => void>~ | None | Handles named SSE events. Use custom event names only, never the reserved names ~open~, ~error~, or ~message~. |
+| ~onBeforeReconnect~ | ~() => void \| Promise<void>~ | None | Runs before a non-resume reconnect. Use it to refetch state for a plain SSE endpoint. A rejected promise is retried with the reconnect delay. |
+| ~resumeFromLastEventId~ | ~boolean~ | ~false~ | When true, reconnect after an applied id and an opened stream with ~last_event_id=<id>~ appended as a query parameter. |
+| ~onError~ | ~() => void~ | None | Runs when the current =EventSource= reports an error, before reconnect scheduling. |
+| ~initialDelayMs~ | ~number~ | ~250~ | First delayed reconnect interval in milliseconds. The first reconnect attempt itself is immediate. |
+| ~maxDelayMs~ | ~number~ | ~30000~ | Maximum reconnect interval in milliseconds. |
+| ~healthyWindowMs~ | ~number~ | ~5000~ | Milliseconds after a delivered event before the reconnect delay resets. |
+
+** =createSnapshotCursorSse<S>(options)=
+
+| Option | Type | Default | Meaning |
+|-
+| ~snapshotPath~ | ~string~ | Required | Snapshot endpoint path. After receiving a subscription id, later requests add =sub=. |
+| ~streamPath~ | ~string~ | Required | SSE endpoint path. The client adds the server-owned =sub= id. |
+| ~resolveUrl~ | ~(path: string) => string~ | Identity | Resolves endpoint paths, for example below a reverse-proxy prefix. It is used for both snapshot fetches and stream URLs. |
+| ~applySnapshot~ | ~(body: S) => void~ | Required | Applies a successful snapshot after its non-empty =x-sub-id= header is read. |
+| ~onMessage~ | ~(event: MessageEvent) => void~ | Required | Handles stream messages. Parse the event payload and update state here. |
+| ~retrySnapshotAfter~ | ~(body: S) => number \| null~ | None | Returns a non-negative delay in milliseconds to retry this otherwise successful snapshot without applying it. Return ~null~ or no value to apply it. |
+| ~onSnapshotError~ | ~(reason: unknown) => void~ | None | Receives failed snapshot fetch, HTTP, header, JSON, callback, or retry-delay validation errors before snapshot retry. |
+| ~onStreamError~ | ~() => void~ | None | Receives errors reported by the underlying stream before its reconnect logic runs. |
+| ~initialSnapshotRetryMs~ | ~number~ | ~250~ | First retry delay for a failed snapshot in milliseconds. |
+| ~maxSnapshotRetryMs~ | ~number~ | ~30000~ | Maximum snapshot retry delay in milliseconds. |
 
 * Development
 
-Run ~npm run check~ (tests, type check, build).
+Run the checks separately when working on the package:
 
-Releases are published to npm with the =pkg= release workflow from a tagged
-commit: the version comes from the tag and ~README.md~ is generated from
-~README.org~.
+#+begin_src sh
+npm test
+npm run typecheck
+npm run build
+#+end_src
+
+For a local consumer, run ~npm link~ in this repository, then run
+~npm link @0k/kal-sse-client~ in the consumer repository. The release process
+generates ~README.md~ from this file; do not commit that generated file.
 
 * License
 
