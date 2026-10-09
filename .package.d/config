@@ -1,0 +1,6 @@
+NAME="@0k/kal-sse-client"
+DESCRIPTION="Framework-agnostic browser client for kal-sse snapshot and server-owned cursor channels."
+EMAIL="valentin.lab@kalysto.org"
+AUTHOR="Valentin LAB"
+AUTHOR_EMAIL="$AUTHOR <$EMAIL>"
+FILES="package.json package-lock.json"
