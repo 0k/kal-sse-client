@@ -1,13 +1,30 @@
 {
   "name": "@0k/kal-sse-client",
-  "version": "0.1.0",
+  "version": "%%version%%",
   "description": "Framework-agnostic browser client for kal-sse snapshot and server-owned cursor channels.",
+  "keywords": [
+    "sse",
+    "server-sent-events",
+    "eventsource",
+    "kal-sse",
+    "reconnect",
+    "resume",
+    "snapshot"
+  ],
+  "author": "Valentin Lab <valentin.lab@kalysto.org>",
   "license": "MIT",
+  "homepage": "https://github.com/0k/kal-sse-client",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0k/kal-sse-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0k/kal-sse-client/issues"
+  },
   "type": "module",
-  "private": true,
   "files": [
     "dist",
-    "README.org",
+    "README.md",
     "LICENSE"
   ],
   "main": "./dist/index.cjs",
@@ -20,12 +37,15 @@
       "require": "./dist/index.cjs"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "prepack": "npm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json && vite build",
-    "check": "npm run test && npm run typecheck && npm run build",
-    "vendor": "node scripts/vendor.mjs"
+    "check": "npm run test && npm run typecheck && npm run build"
   },
   "devDependencies": {
     "@types/node": "22.10.5",

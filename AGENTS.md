@@ -14,4 +14,8 @@ paths, URL resolution, payload parsing, and application state.
   while recovery is pending.
 - Keep the package framework-agnostic and compatible with Chrome 91.
 - Write specification tests first and run `npm run check` before delivery.
-- Deliver consumers with `npm run vendor`; never publish.
+- Released to npm with `pkg` (the version comes from the git tag;
+  `package.json` keeps `%%version%%`). Consumers depend on the published
+  version (`"@0k/kal-sse-client": "^X.Y"`) and develop against this checkout
+  with `npm link`, never committed. Never deliver it as a tarball.
+- `README.md` is generated from `README.org` at release; never commit it.

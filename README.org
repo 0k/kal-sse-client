@@ -1,5 +1,7 @@
 #+TITLE: @0k/kal-sse-client
 
+[[https://www.npmjs.com/package/@0k/kal-sse-client][https://img.shields.io/npm/v/@0k/kal-sse-client.svg]]
+
 * Purpose
 
 =@0k/kal-sse-client= is the shared browser client for the =kal-sse=
@@ -16,8 +18,13 @@ the existing recovery callback on every reconnect). When enabled, it remembers
 non-empty =MessageEvent.lastEventId= values only after the host callback returns.
 
 Hosts provide relative endpoint paths and URL resolution so the same client
-works at an application root or beneath a reverse-proxy prefix. The private
-package is delivered as committed local tarballs and is never published.
+works at an application root or beneath a reverse-proxy prefix.
+
+* Installation
+
+#+begin_src sh
+npm install @0k/kal-sse-client
+#+end_src
 
 * Acceptance ledger
 
@@ -37,8 +44,14 @@ package is delivered as committed local tarballs and is never published.
 | Backoff is bounded and teardown cancels pending work | =test/resilient.test.ts= |
 | Only the shared owner constructs =EventSource= | consumer boundary tests |
 
-* Local delivery
+* Development
 
-Run =npm run check= and then =npm run vendor=. The vendor script builds and
-packs once, validates both consumer declarations, copies identical tarball
-bytes, and installs each frontend from its local vendor directory.
+Run ~npm run check~ (tests, type check, build).
+
+Releases are published to npm with the =pkg= release workflow from a tagged
+commit: the version comes from the tag and ~README.md~ is generated from
+~README.org~.
+
+* License
+
+MIT, see ~LICENSE~.
