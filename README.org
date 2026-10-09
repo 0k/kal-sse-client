@@ -4,8 +4,16 @@
 
 =@0k/kal-sse-client= is the shared browser client for the =kal-sse=
 snapshot + server-owned cursor protocol. It takes a snapshot, adopts the
-server's =x-sub-id=, opens the stream with only that subscription id, and
-re-takes the snapshot before reconnecting after a transport failure.
+server's =x-sub-id=, and initially opens the stream with that subscription id.
+After a transport failure, it resumes with =sub= and the =last_event_id= of
+the last applied event. It re-takes the snapshot only when no event id is
+remembered or the resume fails before opening, preserving the last applied
+snapshot while recovery is pending.
+
+=createSnapshotCursorSse= enables resume-first recovery automatically.
+=createResilientSse= offers =resumeFromLastEventId= (default =false=, retaining
+the existing recovery callback on every reconnect). When enabled, it remembers
+non-empty =MessageEvent.lastEventId= values only after the host callback returns.
 
 Hosts provide relative endpoint paths and URL resolution so the same client
 works at an application root or beneath a reverse-proxy prefix. The private
@@ -16,7 +24,15 @@ package is delivered as committed local tarballs and is never published.
 | Requirement | Automated proof |
 |-
 | Snapshot completes before stream attachment | =test/snapshot-cursor.test.ts= |
-| Reconnect re-snapshots and adopts the refreshed id | =test/snapshot-cursor.test.ts= |
+| Resume sends the last applied id without snapshot recovery | =resumes after the last applied event without running snapshot recovery= |
+| Unopened resume falls back and forgets the old id | =falls back and forgets the id when a resume fails before opening= |
+| No applied id triggers snapshot recovery | =runs snapshot recovery when an opened stream has not delivered an id= |
+| Default remains snapshot-on-every-reconnect | =keeps snapshot-on-every-reconnect behavior by default= |
+| Resume backoff is bounded and stop cancels pending resume | =test/resilient.test.ts= |
+| Only successfully applied non-empty ids are retained | =records only successfully applied ids and preserves them across empty ids= |
+| Named events and encoded ids use the same resume contract | =records named events and URL-encodes their ids without an existing query= |
+| Healthy events reset resume backoff | =resets resume backoff after events sustain the healthy window= |
+| Snapshot channel resumes without fetching, or re-snapshots once on fallback | =test/snapshot-cursor.test.ts= |
 | Failed recovery preserves the last applied snapshot and retries | =test/snapshot-cursor.test.ts= |
 | Backoff is bounded and teardown cancels pending work | =test/resilient.test.ts= |
 | Only the shared owner constructs =EventSource= | consumer boundary tests |
