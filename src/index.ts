@@ -3,6 +3,7 @@ export interface ResilientSseOptions {
   onMessage: (event: MessageEvent) => void;
   onEvents?: Record<string, (event: MessageEvent) => void>;
   onBeforeReconnect?: () => void | Promise<void>;
+  resumeFromLastEventId?: boolean;
   onError?: () => void;
   initialDelayMs?: number;
   maxDelayMs?: number;
@@ -26,6 +27,8 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
   let running = false;
   let started = false;
   let stopped = false;
+  let lastEventId: string | null = null;
+  let opened = false;
 
   function close(): void {
     source?.close();
@@ -36,6 +39,7 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
 
   function receive(callback: (event: MessageEvent) => void, event: MessageEvent): void {
     if (stopped) return;
+    opened = true;
     if (delay > 0 && healthyTimer === null) {
       healthyTimer = setTimeout(() => {
         delay = 0;
@@ -43,12 +47,16 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
       }, healthyWindow);
     }
     callback(event);
+    if (opts.resumeFromLastEventId && event.lastEventId) lastEventId = event.lastEventId;
   }
 
-  function open(): void {
+  function open(resume = false): void {
     if (stopped) return;
     close();
-    source = new EventSource(opts.url());
+    opened = false;
+    const url = opts.url();
+    source = new EventSource(resume ? joinQuery(url, "last_event_id", lastEventId!) : url);
+    if (opts.resumeFromLastEventId) source.onopen = () => { opened = true; };
     source.onmessage = (event) => receive(opts.onMessage, event);
     source.onerror = () => {
       if (stopped) return;
@@ -63,6 +71,7 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
   async function reconnect(): Promise<void> {
     if (running || stopped) return;
     running = true;
+    const resume = Boolean(opts.resumeFromLastEventId && lastEventId !== null && opened);
     close();
     try {
       if (delay > 0) {
@@ -77,8 +86,11 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
       }
       if (stopped) return;
       delay = Math.min(delay === 0 ? initial : delay * 2, maximum);
-      await opts.onBeforeReconnect?.();
-      if (!stopped) open();
+      if (!resume) {
+        lastEventId = null;
+        await opts.onBeforeReconnect?.();
+      }
+      if (!stopped) open(resume);
     } catch {
       if (!stopped) {
         timer = setTimeout(() => {
@@ -202,6 +214,7 @@ export function createSnapshotCursorSse<S>(opts: SnapshotCursorSseOptions<S>): S
             subscription = createResilientSse({
               url: () => resolveUrl(joinQuery(opts.streamPath, "sub", subId!)),
               onMessage: opts.onMessage,
+              resumeFromLastEventId: true,
               ...(opts.onStreamError ? { onError: opts.onStreamError } : {}),
               onBeforeReconnect: () => snapshot(),
             });

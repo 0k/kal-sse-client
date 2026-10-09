@@ -7,6 +7,7 @@ interface FakeSource {
   close: ReturnType<typeof vi.fn>;
   onmessage: ((event: MessageEvent) => void) | null;
   onerror: (() => void) | null;
+  onopen: (() => void) | null;
   addEventListener: ReturnType<typeof vi.fn>;
 }
 
@@ -31,6 +32,7 @@ describe("createSnapshotCursorSse", () => {
         close: vi.fn(),
         onmessage: null,
         onerror: null,
+        onopen: null,
         addEventListener: vi.fn(),
       };
       sources.push(source);
@@ -103,6 +105,50 @@ describe("createSnapshotCursorSse", () => {
       "api/archive/events?sub=sub-one",
       "api/archive/events?sub=sub-three",
     ]);
+    channel.stop();
+  });
+
+  function setupResume() {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(snapshot({ value: 1 }, "sub-one"))
+      .mockResolvedValue(snapshot({ value: 3 }, "sub-three"));
+    vi.stubGlobal("fetch", fetchMock);
+    const applySnapshot = vi.fn();
+    const channel = createSnapshotCursorSse({
+      snapshotPath: "api/archive", streamPath: "api/archive/events",
+      applySnapshot, onMessage: vi.fn(),
+    });
+    return { channel, fetchMock, applySnapshot };
+  }
+
+  async function dropAfterEvents() {
+    sources[0]!.onopen?.();
+    sources[0]!.onmessage?.(new MessageEvent("message", { lastEventId: "1" }));
+    sources[0]!.onmessage?.(new MessageEvent("message", { lastEventId: "2" }));
+    sources[0]!.onerror?.();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it("resumes applied events with sub and last_event_id without fetching a snapshot", async () => {
+    const { channel, fetchMock, applySnapshot } = setupResume();
+    await channel.start();
+    await dropAfterEvents();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(applySnapshot.mock.calls).toEqual([[{ value: 1 }]]);
+    expect(sources[1]!.url).toBe("api/archive/events?sub=sub-one&last_event_id=2");
+    channel.stop();
+  });
+
+  it("fetches exactly one new snapshot when a resume fails before opening", async () => {
+    const { channel, fetchMock, applySnapshot } = setupResume();
+    await channel.start();
+    await dropAfterEvents();
+    sources[1]!.onerror?.();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]![0]).toBe("api/archive?sub=sub-one");
+    expect(applySnapshot.mock.calls).toEqual([[{ value: 1 }], [{ value: 3 }]]);
+    expect(sources[2]!.url).toBe("api/archive/events?sub=sub-three");
     channel.stop();
   });
 });

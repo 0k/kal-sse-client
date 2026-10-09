@@ -2,14 +2,15 @@
 
 Plain TypeScript client for the `kal-sse` snapshot + server-owned cursor
 contract. The package owns EventSource lifecycle, bounded reconnect backoff,
-snapshot registration, and gap-free re-snapshot recovery. Hosts own endpoint
+snapshot registration, and resume-first recovery. Hosts own endpoint
 paths, URL resolution, payload parsing, and application state.
 
 ## Rules
 
 - Raw `new EventSource(...)` is allowed only in this package.
-- Never expose or send a client-owned cursor index; streams carry only `sub`.
-- Re-snapshot before every reconnect and preserve the last applied snapshot
+- On reconnect, resume with the `last_event_id` of the last applied event;
+  re-snapshot only when no event was applied since the last snapshot or the
+  resume attempt fails before opening. Preserve the last applied snapshot
   while recovery is pending.
 - Keep the package framework-agnostic and compatible with Chrome 91.
 - Write specification tests first and run `npm run check` before delivery.
