@@ -26,7 +26,7 @@ describe("createSnapshotCursorSse", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     sources.length = 0;
-    vi.stubGlobal("EventSource", vi.fn().mockImplementation((url: string) => {
+    vi.stubGlobal("EventSource", vi.fn().mockImplementation(function (url: string) {
       const source: FakeSource = {
         url,
         close: vi.fn(),
