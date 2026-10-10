@@ -60,7 +60,11 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
     source.onmessage = (event) => receive(opts.onMessage, event);
     source.onerror = () => {
       if (stopped) return;
-      opts.onError?.();
+      try {
+        opts.onError?.();
+      } catch {
+        // Notification failures must not interrupt recovery.
+      }
       void reconnect();
     };
     for (const [name, callback] of Object.entries(opts.onEvents ?? {})) {
@@ -68,13 +72,13 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
     }
   }
 
-  async function reconnect(): Promise<void> {
+  async function reconnect(waitBeforeAttempt = true): Promise<void> {
     if (running || stopped) return;
     running = true;
     const resume = Boolean(opts.resumeFromLastEventId && lastEventId !== null && opened);
     close();
     try {
-      if (delay > 0) {
+      if (waitBeforeAttempt && delay > 0) {
         await new Promise<void>((resolve) => {
           wake = resolve;
           timer = setTimeout(() => {
@@ -96,7 +100,7 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
         timer = setTimeout(() => {
           timer = null;
           running = false;
-          void reconnect();
+          void reconnect(false);
         }, delay);
         return;
       }
@@ -192,7 +196,11 @@ export function createSnapshotCursorSse<S>(opts: SnapshotCursorSseOptions<S>): S
         return;
       } catch (reason) {
         if (stopped || abort.signal.aborted) return;
-        opts.onSnapshotError?.(reason);
+        try {
+          opts.onSnapshotError?.(reason);
+        } catch {
+          // Notification failures must not interrupt recovery.
+        }
         if (!failed) onFirstFailure?.();
         failed = true;
         await wait(delay);

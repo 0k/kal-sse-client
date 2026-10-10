@@ -120,7 +120,7 @@ cursor instead of client-directed replay.
 | ~onEvents~ | ~Record<string, (event: MessageEvent) => void>~ | None | Handles named SSE events. Use custom event names only, never the reserved names ~open~, ~error~, or ~message~. |
 | ~onBeforeReconnect~ | ~() => void \| Promise<void>~ | None | Runs before a non-resume reconnect. Use it to refetch state for a plain SSE endpoint. A rejected promise is retried with the reconnect delay. |
 | ~resumeFromLastEventId~ | ~boolean~ | ~false~ | When true, reconnect after an applied id and an opened stream with ~last_event_id=<id>~ appended as a query parameter. |
-| ~onError~ | ~() => void~ | None | Runs when the current =EventSource= reports an error, before reconnect scheduling. |
+| ~onError~ | ~() => void~ | None | Runs when the current =EventSource= reports an error, before reconnect scheduling. Exceptions from this notification are swallowed. |
 | ~initialDelayMs~ | ~number~ | ~250~ | First delayed reconnect interval in milliseconds. The first reconnect attempt itself is immediate. |
 | ~maxDelayMs~ | ~number~ | ~30000~ | Maximum reconnect interval in milliseconds. |
 | ~healthyWindowMs~ | ~number~ | ~5000~ | Milliseconds after a delivered event before the reconnect delay resets. |
@@ -135,8 +135,8 @@ cursor instead of client-directed replay.
 | ~applySnapshot~ | ~(body: S) => void~ | Required | Applies a successful snapshot after its non-empty =x-sub-id= header is read. |
 | ~onMessage~ | ~(event: MessageEvent) => void~ | Required | Handles stream messages. Parse the event payload and update state here. |
 | ~retrySnapshotAfter~ | ~(body: S) => number \| null~ | None | Returns a non-negative delay in milliseconds to retry this otherwise successful snapshot without applying it. Return ~null~ or no value to apply it. |
-| ~onSnapshotError~ | ~(reason: unknown) => void~ | None | Receives failed snapshot fetch, HTTP, header, JSON, callback, or retry-delay validation errors before snapshot retry. |
-| ~onStreamError~ | ~() => void~ | None | Receives errors reported by the underlying stream before its reconnect logic runs. |
+| ~onSnapshotError~ | ~(reason: unknown) => void~ | None | Receives failed snapshot fetch, HTTP, header, JSON, callback, or retry-delay validation errors before snapshot retry. Exceptions from this notification are swallowed. |
+| ~onStreamError~ | ~() => void~ | None | Receives errors reported by the underlying stream before its reconnect logic runs. Exceptions from this notification are swallowed. |
 | ~initialSnapshotRetryMs~ | ~number~ | ~250~ | First retry delay for a failed snapshot in milliseconds. |
 | ~maxSnapshotRetryMs~ | ~number~ | ~30000~ | Maximum snapshot retry delay in milliseconds. |
 

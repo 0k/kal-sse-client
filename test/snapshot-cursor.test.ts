@@ -121,6 +121,55 @@ describe("createSnapshotCursorSse", () => {
     return { channel, fetchMock, applySnapshot };
   }
 
+  it("reconnects even when the stream error notification throws", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(snapshot({ value: 1 }, "sub-one"));
+    vi.stubGlobal("fetch", fetchMock);
+    const onStreamError = vi.fn(() => { throw new Error("notification failed"); });
+    const channel = createSnapshotCursorSse({
+      snapshotPath: "api/archive", streamPath: "api/archive/events",
+      applySnapshot: vi.fn(), onMessage: vi.fn(), onStreamError,
+    });
+    await channel.start();
+    expect(() => sources[0]!.onerror?.()).not.toThrow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onStreamError).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sources).toHaveLength(2);
+    channel.stop();
+  });
+
+  it("resolves start and retries snapshots even when the snapshot error notification throws", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new Error("network unavailable"))
+      .mockResolvedValueOnce(snapshot({}, "", 503))
+      .mockResolvedValue(snapshot({ value: 3 }, "sub-three"));
+    vi.stubGlobal("fetch", fetchMock);
+    const onSnapshotError = vi.fn(() => { throw new Error("notification failed"); });
+    const applySnapshot = vi.fn();
+    const channel = createSnapshotCursorSse({
+      snapshotPath: "api/archive", streamPath: "api/archive/events",
+      applySnapshot, onMessage: vi.fn(), onSnapshotError,
+      initialSnapshotRetryMs: 25, maxSnapshotRetryMs: 50,
+    });
+    const resolved = vi.fn();
+    void channel.start().then(resolved);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resolved).toHaveBeenCalledTimes(1);
+    expect(sources).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(24);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(49);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onSnapshotError).toHaveBeenCalledTimes(2);
+    expect(applySnapshot.mock.calls).toEqual([[{ value: 3 }]]);
+    expect(sources.map((source) => source.url)).toEqual(["api/archive/events?sub=sub-three"]);
+    channel.stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   async function dropAfterEvents() {
     sources[0]!.onopen?.();
     sources[0]!.onmessage?.(new MessageEvent("message", { lastEventId: "1" }));

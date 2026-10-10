@@ -96,6 +96,55 @@ describe("createResilientSse", () => {
     subscription.stop();
   });
 
+  it("retries rejected reconnect hooks with one bounded backoff wait per attempt", async () => {
+    const attempts: number[] = [];
+    const opens: number[] = [];
+    const start = Date.now();
+    const { subscription } = setup({
+      url: () => { opens.push(Date.now() - start); return "events"; },
+      onBeforeReconnect: async () => {
+        attempts.push(Date.now() - start);
+        if (attempts.length <= 4) throw new Error("recovery unavailable");
+      },
+    });
+
+    await fail(0);
+    expect(attempts).toEqual([0]);
+    for (const [wait, time] of [[100, 100], [200, 300], [200, 500], [200, 700]]) {
+      await vi.advanceTimersByTimeAsync(wait! - 1);
+      expect(attempts[attempts.length - 1]).toBeLessThan(time!);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(attempts[attempts.length - 1]).toBe(time);
+    }
+    expect(attempts).toEqual([0, 100, 300, 500, 700]);
+    expect(opens).toEqual([0, 700]);
+    expect(sources).toHaveLength(2);
+    subscription.stop();
+  });
+
+  it("cancels rejected reconnect hook retries on stop", async () => {
+    const onBeforeReconnect = vi.fn().mockRejectedValue(new Error("recovery unavailable"));
+    const { subscription } = setup({ onBeforeReconnect });
+    await fail(0);
+    expect(onBeforeReconnect).toHaveBeenCalledTimes(1);
+    subscription.stop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(onBeforeReconnect).toHaveBeenCalledTimes(1);
+    expect(sources).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("reconnects even when the error notification throws", async () => {
+    const onError = vi.fn(() => { throw new Error("notification failed"); });
+    const { subscription, onBeforeReconnect } = setup({ onError });
+    expect(() => sources[0]!.onerror?.()).not.toThrow();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onBeforeReconnect).toHaveBeenCalledTimes(1);
+    expect(sources).toHaveLength(2);
+    subscription.stop();
+  });
+
   it("falls back and forgets the id when a resume fails before opening", async () => {
     const { subscription, onBeforeReconnect } = setup();
     message(0, "2");
