@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createSnapshotCursorSse } from "../src/index";
+import { createSnapshotCursorSse, SnapshotHttpError } from "../src/index";
 
 interface FakeSource {
   url: string;
@@ -91,8 +91,9 @@ describe("createSnapshotCursorSse", () => {
 
     await channel.start();
     sources[0]?.onerror?.();
-    await Promise.resolve();
-    await Promise.resolve();
+    // Flush the failed re-snapshot (fetch, then reading its refusal body)
+    // without advancing time to the retry.
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(applySnapshot.mock.calls).toEqual([[{ value: 1 }]]);
     expect(onSnapshotError).toHaveBeenCalledTimes(1);
@@ -198,6 +199,37 @@ describe("createSnapshotCursorSse", () => {
     expect(fetchMock.mock.calls[1]![0]).toBe("api/archive?sub=sub-one");
     expect(applySnapshot.mock.calls).toEqual([[{ value: 1 }], [{ value: 3 }]]);
     expect(sources[2]!.url).toBe("api/archive/events?sub=sub-three");
+    channel.stop();
+  });
+
+  it("reports a refused snapshot with the server's own reason and status", async () => {
+    const reasons: unknown[] = [];
+    const notJson = { ok: false, status: 502, headers: { get: () => null }, json: () => Promise.reject(new SyntaxError("x")) } as unknown as Response;
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(snapshot({ error: 'path does not exist: "/x"' }, "", 404))
+      .mockResolvedValueOnce(snapshot({ detail: "admission pending", error: "unauthorized" }, "", 403))
+      .mockResolvedValueOnce(snapshot({ error: 7 }, "", 500))
+      .mockResolvedValueOnce(snapshot({ detail: [{ msg: "bad" }], error: "quota exceeded" }, "", 422))
+      .mockResolvedValueOnce(snapshot({ detail: "  ", error: "locked" }, "", 423))
+      .mockResolvedValueOnce(notJson)
+      .mockResolvedValueOnce(snapshot({ value: 1 }, "sub-one"));
+    vi.stubGlobal("fetch", fetchMock);
+    const channel = createSnapshotCursorSse<{ value: number }>({
+      snapshotPath: "api/x", streamPath: "sse/x", applySnapshot: vi.fn(), onMessage: vi.fn(),
+      onSnapshotError: (reason) => reasons.push(reason),
+      initialSnapshotRetryMs: 1, maxSnapshotRetryMs: 1,
+    });
+    const started = channel.start();
+    await vi.advanceTimersByTimeAsync(10);
+    await started;
+    expect(reasons.map((r) => [r instanceof SnapshotHttpError, (r as SnapshotHttpError).status, (r as Error).message])).toEqual([
+      [true, 404, 'path does not exist: "/x"'],
+      [true, 403, "admission pending"],
+      [true, 500, "HTTP 500"],
+      [true, 422, "quota exceeded"],
+      [true, 423, "locked"],
+      [true, 502, "HTTP 502"],
+    ]);
     channel.stop();
   });
 });

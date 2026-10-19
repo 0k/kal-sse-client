@@ -127,6 +127,36 @@ export function createResilientSse(opts: ResilientSseOptions): ResilientSseSubsc
   };
 }
 
+/**
+ * A snapshot request the server refused.  The message is the server's own
+ * reason (the JSON body's `detail` or `error` string) when it gave one,
+ * else `HTTP <status>`.
+ */
+export class SnapshotHttpError extends Error {
+  readonly status: number;
+  constructor(status: number, reason: string | null) {
+    super(reason ?? `HTTP ${status}`);
+    this.name = "SnapshotHttpError";
+    this.status = status;
+  }
+}
+
+async function refusal(response: Response): Promise<SnapshotHttpError> {
+  let reason: string | null = null;
+  try {
+    const body = (await response.json()) as { detail?: unknown; error?: unknown } | null;
+    for (const text of [body?.detail, body?.error]) {
+      if (typeof text === "string" && text.trim()) {
+        reason = text;
+        break;
+      }
+    }
+  } catch {
+    // Not JSON: only the status is known.
+  }
+  return new SnapshotHttpError(response.status, reason);
+}
+
 export interface SnapshotCursorSseOptions<S> {
   snapshotPath: string;
   streamPath: string;
@@ -180,7 +210,7 @@ export function createSnapshotCursorSse<S>(opts: SnapshotCursorSseOptions<S>): S
       try {
         const path = subId === null ? opts.snapshotPath : joinQuery(opts.snapshotPath, "sub", subId);
         const response = await fetch(resolveUrl(path), { signal: abort.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw await refusal(response);
         const body = (await response.json()) as S;
         const id = response.headers.get("x-sub-id")?.trim();
         if (!id) throw new Error("Snapshot response missing non-empty x-sub-id");

@@ -135,7 +135,7 @@ cursor instead of client-directed replay.
 | ~applySnapshot~ | ~(body: S) => void~ | Required | Applies a successful snapshot after its non-empty =x-sub-id= header is read. |
 | ~onMessage~ | ~(event: MessageEvent) => void~ | Required | Handles stream messages. Parse the event payload and update state here. |
 | ~retrySnapshotAfter~ | ~(body: S) => number \| null~ | None | Returns a non-negative delay in milliseconds to retry this otherwise successful snapshot without applying it. Return ~null~ or no value to apply it. |
-| ~onSnapshotError~ | ~(reason: unknown) => void~ | None | Receives failed snapshot fetch, HTTP, header, JSON, callback, or retry-delay validation errors before snapshot retry. Exceptions from this notification are swallowed. |
+| ~onSnapshotError~ | ~(reason: unknown) => void~ | None | Receives failed snapshot fetch, HTTP, header, JSON, callback, or retry-delay validation errors before snapshot retry. An HTTP refusal is a ~SnapshotHttpError~ with the response ~status~; its message is the body's ~detail~ or ~error~ string when the server gave one, else ~HTTP <status>~. Exceptions from this notification are swallowed. |
 | ~onStreamError~ | ~() => void~ | None | Receives errors reported by the underlying stream before its reconnect logic runs. Exceptions from this notification are swallowed. |
 | ~initialSnapshotRetryMs~ | ~number~ | ~250~ | First retry delay for a failed snapshot in milliseconds. |
 | ~maxSnapshotRetryMs~ | ~number~ | ~30000~ | Maximum snapshot retry delay in milliseconds. |
