@@ -145,12 +145,11 @@ cursor instead of client-directed replay.
 
 * Development
 
-Run the checks separately when working on the package:
+Run every check (tests, typecheck, build, and the Chrome 91 inspection of the
+built code) before delivering a change:
 
 #+begin_src sh
-npm test
-npm run typecheck
-npm run build
+npm run check
 #+end_src
 
 For a local consumer, run ~npm link~ in this repository, then run
