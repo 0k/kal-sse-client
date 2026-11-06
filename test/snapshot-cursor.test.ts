@@ -52,7 +52,7 @@ describe("createSnapshotCursorSse", () => {
     const channel = createSnapshotCursorSse<{ value: number }>({
       snapshotPath: "api/archive",
       streamPath: "api/archive/events",
-      resolveUrl: (path) => new URL(path, "https://example.test/serve/rpg/").href,
+      resolveUrl: (path) => new URL(path, "https://example.test/myapp/").href,
       applySnapshot,
       onMessage: vi.fn(),
     });
@@ -60,12 +60,12 @@ describe("createSnapshotCursorSse", () => {
     await channel.start();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://example.test/serve/rpg/api/archive",
+      "https://example.test/myapp/api/archive",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(applySnapshot).toHaveBeenCalledWith({ value: 1 });
     expect(sources.map((source) => source.url)).toEqual([
-      "https://example.test/serve/rpg/api/archive/events?sub=sub-one",
+      "https://example.test/myapp/api/archive/events?sub=sub-one",
     ]);
     channel.stop();
   });
