@@ -20,6 +20,9 @@ updating application state. It supports Chrome 91 and later.
 npm install @0k/kal-sse-client
 #+end_src
 
+The package is an ES module only: load it with ~import~, as bundlers do. There
+is no CommonJS build for ~require()~.
+
 * Usage
 
 ** Snapshot and cursor channel
